@@ -194,3 +194,4 @@ cython_debug/
 .cursorindexingignore
 
 data/
+mcp_resources/
