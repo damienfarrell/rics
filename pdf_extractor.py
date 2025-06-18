@@ -5,261 +5,347 @@ import logging
 import json
 from datetime import datetime
 import re
+from typing import Dict, List, Optional
+from dataclasses import dataclass, asdict
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-class PDFExtractor:
-    def __init__(self, preserve_layout=True, extract_images=False):
-        self.preserve_layout = preserve_layout
-        self.extract_images = extract_images
+
+@dataclass
+class MCPDocumentMetadata:
+    """Streamlined metadata for MCP server usage."""
+    document_id: str
+    filename: str
+    relative_path: str
+    title: str
+    author: Optional[str]
+    document_type: str
+    page_count: int
+    keywords: List[str]
+    has_images: bool
+    has_tables: bool
+    extraction_date: str
+
+
+class MCPPDFExtractor:
+    """Optimized PDF extractor for MCP server usage."""
     
-    def extract_metadata(self, doc):
-        """Extract PDF metadata."""
-        metadata = doc.metadata
-        return {
-            "title": metadata.get("title", "").strip() or None,
-            "author": metadata.get("author", "").strip() or None,
-            "subject": metadata.get("subject", "").strip() or None,
-            "keywords": metadata.get("keywords", "").strip() or None,
-            "creator": metadata.get("creator", "").strip() or None,
-            "producer": metadata.get("producer", "").strip() or None,
-            "creation_date": self._format_date(metadata.get("creationDate")),
-            "modification_date": self._format_date(metadata.get("modDate")),
-            "page_count": len(doc),
+    def __init__(self, chunk_size: int = 2000):
+        self.chunk_size = chunk_size
+        
+    def generate_document_id(self, file_path: Path) -> str:
+        """Generate a simple, readable document ID."""
+        name_part = file_path.stem[:30].lower()
+        name_part = re.sub(r'[^a-z0-9]', '_', name_part)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        return f"{name_part}_{timestamp}"
+    
+    def extract_keywords(self, text: str, max_keywords: int = 10) -> List[str]:
+        """Extract keywords using simple frequency analysis."""
+        # Remove common words
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 
+                     'to', 'for', 'of', 'with', 'by', 'from', 'is', 'are', 
+                     'was', 'were', 'been', 'be', 'have', 'has', 'had', 'will'}
+        
+        # Find capitalized words (likely important terms)
+        words = re.findall(r'\b[A-Z][a-zA-Z]{2,}\b', text)
+        
+        # Count frequency
+        word_freq = {}
+        for word in words:
+            if word.lower() not in stop_words:
+                word_freq[word] = word_freq.get(word, 0) + 1
+        
+        # Return top keywords
+        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
+        return [word for word, _ in sorted_words[:max_keywords]]
+    
+    def classify_document_type(self, text_sample: str, filename: str) -> str:
+        """Simple document classification based on content patterns."""
+        text_lower = text_sample.lower()
+        filename_lower = filename.lower()
+        
+        # Check filename patterns first
+        patterns = {
+            'invoice': ['invoice', 'receipt', 'bill'],
+            'report': ['report', 'analysis', 'review'],
+            'contract': ['contract', 'agreement'],
+            'manual': ['manual', 'guide', 'documentation'],
+            'presentation': ['presentation', 'slides']
         }
+        
+        for doc_type, keywords in patterns.items():
+            if any(keyword in filename_lower for keyword in keywords):
+                return doc_type
+            if any(keyword in text_lower for keyword in keywords):
+                return doc_type
+        
+        return 'document'
     
-    def _format_date(self, date_str):
-        """Format PDF date string to ISO format."""
-        if not date_str:
-            return None
-        try:
-            # PDF date format: D:YYYYMMDDHHmmSSOHH'mm'
-            if date_str.startswith("D:"):
-                date_str = date_str[2:]
-            # Extract just the date portion
-            date_part = date_str[:14]
-            if len(date_part) >= 8:
-                dt = datetime.strptime(date_part[:8], "%Y%m%d")
-                return dt.isoformat()
-        except:
-            pass
-        return None
+    def chunk_content(self, text: str) -> List[Dict]:
+        """Split content into chunks for better MCP context handling."""
+        # Split by double newlines (paragraphs)
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        
+        chunks = []
+        current_chunk = ""
+        current_words = 0
+        
+        for para in paragraphs:
+            para_words = len(para.split())
+            
+            # If adding this paragraph exceeds chunk size, save current chunk
+            if current_words + para_words > self.chunk_size and current_chunk:
+                chunks.append({
+                    "chunk_id": len(chunks),
+                    "text": current_chunk.strip(),
+                    "word_count": current_words
+                })
+                current_chunk = para
+                current_words = para_words
+            else:
+                current_chunk += "\n\n" + para if current_chunk else para
+                current_words += para_words
+        
+        # Add final chunk
+        if current_chunk:
+            chunks.append({
+                "chunk_id": len(chunks),
+                "text": current_chunk.strip(),
+                "word_count": current_words
+            })
+        
+        return chunks
     
-    def extract_text_with_structure(self, pdf_path):
-        """Extract text from PDF with structure preservation."""
+    def extract_content(self, pdf_path: Path, relative_path: str) -> Dict:
+        """Extract content optimized for MCP usage."""
         try:
             doc = fitz.open(pdf_path)
             
-            # Extract metadata
-            metadata = self.extract_metadata(doc)
+            # Extract all text
+            full_text = ""
+            has_images = False
             
-            # Extract text from each page
-            pages = []
-            full_text = []
+            for page in doc:
+                page_text = page.get_text()
+                full_text += page_text + "\n\n"
+                
+                if page.get_images():
+                    has_images = True
             
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                
-                # Get page dimensions
-                page_rect = page.rect
-                page_info = {
-                    "page_number": page_num + 1,
-                    "width": page_rect.width,
-                    "height": page_rect.height,
-                }
-                
-                if self.preserve_layout:
-                    # Extract with layout preservation
-                    text_page = page.get_textpage()
-                    blocks = page.get_text("dict")
-                    
-                    page_text = []
-                    page_structure = []
-                    
-                    for block in blocks["blocks"]:
-                        if block["type"] == 0:  # Text block
-                            block_text = []
-                            for line in block["lines"]:
-                                line_text = ""
-                                for span in line["spans"]:
-                                    line_text += span["text"]
-                                if line_text.strip():
-                                    block_text.append(line_text)
-                                    
-                                    # Store structure info
-                                    page_structure.append({
-                                        "type": "text",
-                                        "content": line_text.strip(),
-                                        "font_size": span.get("size", 0),
-                                        "font_name": span.get("font", ""),
-                                        "bbox": line["bbox"],  # Bounding box
-                                    })
-                            
-                            if block_text:
-                                page_text.extend(block_text)
-                    
-                    page_content = "\n".join(page_text)
-                    page_info["structured_content"] = page_structure
-                    
-                else:
-                    # Simple text extraction
-                    page_content = page.get_text()
-                
-                page_info["text"] = page_content
-                pages.append(page_info)
-                full_text.append(f"\n--- Page {page_num + 1} ---\n{page_content}")
+            # Clean up text
+            full_text = re.sub(r'\n{3,}', '\n\n', full_text).strip()
+            
+            # Detect tables (simple pattern matching)
+            has_tables = bool(re.search(r'[\|\+\-]{3,}', full_text))
+            
+            # Extract keywords from first 5000 chars
+            keywords = self.extract_keywords(full_text[:5000])
+            
+            # Create metadata
+            metadata = MCPDocumentMetadata(
+                document_id=self.generate_document_id(pdf_path),
+                filename=pdf_path.name,
+                relative_path=str(relative_path),
+                title=doc.metadata.get("title", "").strip() or pdf_path.stem,
+                author=doc.metadata.get("author", "").strip() or None,
+                document_type=self.classify_document_type(full_text[:1000], pdf_path.stem),
+                page_count=len(doc),
+                keywords=keywords,
+                has_images=has_images,
+                has_tables=has_tables,
+                extraction_date=datetime.now().isoformat()
+            )
             
             doc.close()
             
-            # Create structured output
-            result = {
+            # Chunk content
+            chunks = self.chunk_content(full_text)
+            
+            # Create result
+            return {
                 "status": "success",
-                "source_file": str(pdf_path),
-                "extraction_date": datetime.now().isoformat(),
-                "metadata": metadata,
-                "extraction_settings": {
-                    "preserve_layout": self.preserve_layout,
-                    "extract_images": self.extract_images,
-                },
+                "document_id": metadata.document_id,
+                "metadata": asdict(metadata),
                 "content": {
-                    "full_text": "\n".join(full_text),
-                    "pages": pages if self.preserve_layout else None,
-                },
-                "statistics": {
-                    "total_pages": len(pages),
-                    "total_characters": sum(len(p["text"]) for p in pages),
-                    "total_words": sum(len(p["text"].split()) for p in pages),
+                    "chunks": chunks,
+                    "chunk_count": len(chunks),
+                    "total_words": sum(chunk["word_count"] for chunk in chunks)
                 }
             }
             
-            return result
-            
         except Exception as e:
-            logger.error(f"Error extracting text from {pdf_path}: {str(e)}")
+            logger.error(f"Error extracting {pdf_path}: {str(e)}")
             return {
                 "status": "error",
-                "source_file": str(pdf_path),
                 "error": str(e),
-                "extraction_date": datetime.now().isoformat(),
+                "file": str(pdf_path)
             }
     
-    def save_extraction(self, result, output_path):
-        """Save extraction result in structured format."""
+    def save_extraction(self, result: Dict, output_dir: Path, relative_dir: Path) -> bool:
+        """Save extraction result in MCP-friendly format."""
         try:
-            # Save as JSON for structured data
-            json_path = output_path.with_suffix('.json')
+            # Create output directory
+            output_path = output_dir / relative_dir
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            # Save as JSON
+            if result['status'] == 'success':
+                filename = result['metadata']['filename']
+                json_path = output_path / f"{Path(filename).stem}.json"
+            else:
+                json_path = output_path / f"error_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
             with open(json_path, 'w', encoding='utf-8') as f:
                 json.dump(result, f, indent=2, ensure_ascii=False)
-            
-            # Also save plain text version for easy reading
-            if result["status"] == "success":
-                txt_path = output_path.with_suffix('.txt')
-                with open(txt_path, 'w', encoding='utf-8') as f:
-                    # Write metadata header
-                    f.write("=" * 80 + "\n")
-                    f.write(f"PDF: {Path(result['source_file']).name}\n")
-                    if result['metadata']['title']:
-                        f.write(f"Title: {result['metadata']['title']}\n")
-                    if result['metadata']['author']:
-                        f.write(f"Author: {result['metadata']['author']}\n")
-                    f.write(f"Pages: {result['metadata']['page_count']}\n")
-                    f.write(f"Extracted: {result['extraction_date']}\n")
-                    f.write("=" * 80 + "\n\n")
-                    
-                    # Write content
-                    f.write(result['content']['full_text'])
             
             return True
             
         except Exception as e:
-            logger.error(f"Error saving extraction result: {str(e)}")
+            logger.error(f"Error saving extraction: {str(e)}")
             return False
 
-def process_pdfs(source_folder, destination_folder, preserve_layout=True):
-    """Process all PDFs in source folder with improved extraction."""
-    # Create destination folder if it doesn't exist
-    Path(destination_folder).mkdir(parents=True, exist_ok=True)
-    
-    # Initialize extractor
-    extractor = PDFExtractor(preserve_layout=preserve_layout)
-    
-    # Track statistics
-    processed_count = 0
-    error_count = 0
-    total_pages = 0
-    
-    # Walk through all files in source folder and subfolders
-    for root, dirs, files in os.walk(source_folder):
-        for file in files:
-            if file.lower().endswith('.pdf'):
-                # Get full path of the PDF
-                pdf_path = Path(root) / file
-                
-                # Create relative path structure in destination
-                relative_path = Path(root).relative_to(source_folder)
-                dest_subfolder = Path(destination_folder) / relative_path
-                dest_subfolder.mkdir(parents=True, exist_ok=True)
-                
-                # Create output path (without extension)
-                output_path = dest_subfolder / Path(file).stem
-                
-                logger.info(f"Processing: {pdf_path}")
-                
-                # Extract text with structure
-                result = extractor.extract_text_with_structure(pdf_path)
-                
-                if result["status"] == "success":
-                    if extractor.save_extraction(result, output_path):
-                        processed_count += 1
-                        total_pages += result["metadata"]["page_count"]
-                        logger.info(f"Saved to: {output_path}.json and {output_path}.txt")
-                    else:
-                        error_count += 1
-                else:
-                    error_count += 1
-                    # Save error information
-                    error_path = output_path.with_suffix('.error.json')
-                    with open(error_path, 'w', encoding='utf-8') as f:
-                        json.dump(result, f, indent=2)
-    
-    # Print summary
-    logger.info(f"\nProcessing complete!")
-    logger.info(f"Successfully processed: {processed_count} PDFs")
-    logger.info(f"Total pages extracted: {total_pages}")
-    logger.info(f"Errors encountered: {error_count} PDFs")
-    
-    # Save processing summary
-    summary = {
-        "processing_date": datetime.now().isoformat(),
-        "source_folder": str(source_folder),
-        "destination_folder": str(destination_folder),
-        "statistics": {
-            "processed_pdfs": processed_count,
-            "failed_pdfs": error_count,
-            "total_pages": total_pages,
-        }
+
+def create_mcp_index(documents: List[Dict]) -> Dict:
+    """Create an optimized index for MCP queries."""
+    index = {
+        "version": "3.0",
+        "created_at": datetime.now().isoformat(),
+        "document_count": len(documents),
+        "documents": {},  # ID -> basic info mapping
+        "by_type": {},    # Type -> list of IDs
+        "by_folder": {},  # Folder -> list of IDs
+        "keywords": {}    # Keyword -> list of IDs
     }
     
-    summary_path = Path(destination_folder) / "_extraction_summary.json"
-    with open(summary_path, 'w', encoding='utf-8') as f:
-        json.dump(summary, f, indent=2)
-
-def main():
-    """Main function to run the PDF extraction script."""
-    # Define source and destination folders
-    source_folder = "data"
-    destination_folder = "mcp_resources"  # Changed to match MCP server directory
+    for doc in documents:
+        if doc.get("status") != "success":
+            continue
+            
+        doc_id = doc["document_id"]
+        metadata = doc["metadata"]
+        
+        # Store minimal info in main index
+        index["documents"][doc_id] = {
+            "filename": metadata["filename"],
+            "path": metadata["relative_path"],
+            "title": metadata["title"],
+            "type": metadata["document_type"],
+            "pages": metadata["page_count"]
+        }
+        
+        # Index by type
+        doc_type = metadata["document_type"]
+        if doc_type not in index["by_type"]:
+            index["by_type"][doc_type] = []
+        index["by_type"][doc_type].append(doc_id)
+        
+        # Index by folder
+        folder = str(Path(metadata["relative_path"]).parent)
+        if folder == ".":
+            folder = "root"
+        if folder not in index["by_folder"]:
+            index["by_folder"][folder] = []
+        index["by_folder"][folder].append(doc_id)
+        
+        # Index by keywords
+        for keyword in metadata["keywords"]:
+            if keyword not in index["keywords"]:
+                index["keywords"][keyword] = []
+            index["keywords"][keyword].append(doc_id)
     
-    # Check if source folder exists
-    if not os.path.exists(source_folder):
+    return index
+
+
+def process_pdfs_for_mcp(source_folder: str, output_folder: str):
+    """Process PDFs optimized for MCP server usage."""
+    source_path = Path(source_folder)
+    output_path = Path(output_folder)
+    
+    if not source_path.exists():
         logger.error(f"Source folder '{source_folder}' does not exist!")
         return
     
-    # Process PDFs with layout preservation
-    logger.info(f"Starting PDF extraction from '{source_folder}' to '{destination_folder}'")
-    process_pdfs(source_folder, destination_folder, preserve_layout=True)
+    # Initialize extractor
+    extractor = MCPPDFExtractor(chunk_size=2000)
+    
+    # Process results
+    all_documents = []
+    processed_count = 0
+    failed_count = 0
+    
+    # Process all PDFs
+    for pdf_file in source_path.rglob("*.pdf"):
+        relative_path = pdf_file.relative_to(source_path)
+        relative_dir = relative_path.parent
+        
+        logger.info(f"Processing: {relative_path}")
+        
+        # Extract content
+        result = extractor.extract_content(pdf_file, relative_path)
+        
+        if result["status"] == "success":
+            if extractor.save_extraction(result, output_path, relative_dir):
+                processed_count += 1
+                all_documents.append(result)
+        else:
+            failed_count += 1
+            # Save error in errors folder
+            extractor.save_extraction(result, output_path / "errors", relative_dir)
+    
+    # Create and save index
+    if all_documents:
+        index = create_mcp_index(all_documents)
+        index_path = output_path / "mcp_index.json"
+        
+        with open(index_path, 'w', encoding='utf-8') as f:
+            json.dump(index, f, indent=2, ensure_ascii=False)
+        
+        logger.info(f"Created MCP index at: {index_path}")
+    
+    # Create simple folder map
+    folder_map = {}
+    for doc in all_documents:
+        if doc.get("status") == "success":
+            folder = str(Path(doc["metadata"]["relative_path"]).parent)
+            if folder == ".":
+                folder = "root"
+            if folder not in folder_map:
+                folder_map[folder] = {"count": 0, "types": {}}
+            folder_map[folder]["count"] += 1
+            
+            doc_type = doc["metadata"]["document_type"]
+            if doc_type not in folder_map[folder]["types"]:
+                folder_map[folder]["types"][doc_type] = 0
+            folder_map[folder]["types"][doc_type] += 1
+    
+    # Save folder map
+    folder_map_path = output_path / "folder_map.json"
+    with open(folder_map_path, 'w', encoding='utf-8') as f:
+        json.dump(folder_map, f, indent=2)
+    
+    # Print summary
+    logger.info("\n" + "="*60)
+    logger.info("MCP PDF Extraction Complete!")
+    logger.info(f"Successfully processed: {processed_count} documents")
+    logger.info(f"Failed: {failed_count} documents")
+    logger.info(f"Index saved to: {index_path}")
+    logger.info("="*60)
+
+
+def main():
+    """Main function to run the MCP PDF extraction."""
+    source_folder = "data"
+    output_folder = "mcp_resources"
+    
+    logger.info("Starting MCP-optimized PDF extraction")
+    process_pdfs_for_mcp(source_folder, output_folder)
+
 
 if __name__ == "__main__":
     main()
