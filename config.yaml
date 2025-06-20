@@ -1,0 +1,81 @@
+# Configuration for APC Case Study Generator MCP Server
+
+server:
+  name: "apc-case-study-generator"
+  version: "1.0.0"
+  uri_prefix: "file:///"
+  json_extension: ".json"
+  max_file_size_mb: 10
+
+directories:
+  base: "mcp_resources"
+  user_data: "user_data"
+  examples: "apc_example_submissions"
+  guides: "apc_submission_guides"
+  templates: "templates"
+
+validation:
+  word_count_limit: 3000
+  required_sections:
+    - introduction
+    - approach
+    - achievement
+    - conclusion
+  
+  reflection_indicators:
+    - learnt
+    - learning
+    - reflect
+    - improved
+    - develop
+    - experience
+    - future
+    - better
+    - mistake
+    - challenge
+    - growth
+
+competency_levels:
+  level_3_indicators:
+    - advised
+    - recommended
+    - strategic
+    - complex
+    - innovative
+    - leadership
+    - decision
+    - significant
+    - critical
+    - expert
+
+confidentiality_patterns:
+  specific_amounts: "£[\\d,]+\\.?\\d*"
+  company_names: "\\b[A-Z][a-z]+ (Ltd|Limited|Corporation|Corp|Inc)\\b"
+  personal_names: "\\b[A-Z][a-z]+ [A-Z][a-z]+\\b"
+  phone_numbers: "\\b\\d{4,5}\\s?\\d{6}\\b"
+  email_addresses: "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b"
+
+industry_factors:
+  rail:
+    considerations:
+      - possession constraints
+      - safety requirements
+      - Network Rail standards
+    typical_costs: "£50k-500k for minor works, £1M+ for major interventions"
+    timeframes: "6-18 months including approvals"
+  
+  commercial:
+    considerations:
+      - tenant disruption
+      - retail trading impact
+      - planning constraints
+    typical_costs: "£100k-2M depending on scale"
+    timeframes: "3-12 months typical delivery"
+  
+  infrastructure:
+    considerations:
+      - public impact
+      - utility diversions
+      - environmental constraints
+    typical_costs: "£500k-10M+ for major works"
+    timeframes: "12-36 months including consents"
