@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional, Dict, List, Union, Tuple
 from dataclasses import dataclass
@@ -171,6 +172,797 @@ class APCCaseStudyServer:
         
         return file_path
     
+    # NEW: Issue/Challenge Templates for Quantity Surveying
+    def _get_qs_issue_templates(self) -> Dict[str, Any]:
+        """Get quantity surveying issue/challenge templates."""
+        return {
+            "cost_control_and_budget_management": {
+                "title": "Cost Overrun and Budget Recovery",
+                "description": "Project experiencing significant cost overruns requiring intervention",
+                "typical_scenarios": [
+                    "Unforeseen ground conditions increasing foundation costs",
+                    "Material price escalation beyond contract allowances",
+                    "Scope creep without proper change control",
+                    "Productivity issues affecting labour costs",
+                    "Design changes post-contract award"
+                ],
+                "options_framework": [
+                    "Value engineering to reduce costs",
+                    "Renegotiate contract terms",
+                    "Seek additional funding from client",
+                    "Absorb costs and reduce profit margin",
+                    "Claim compensation events under contract"
+                ],
+                "competencies_demonstrated": [
+                    "Commercial management of construction (Level 3)",
+                    "Project financial control and reporting (Level 3)",
+                    "Quantification and costing of construction works (Level 3)",
+                    "Contract practice (Level 2)",
+                    "Communication and negotiation (Level 2)"
+                ],
+                "evidence_to_collect": [
+                    "Original and revised budgets",
+                    "Cost reports and CVRs",
+                    "Meeting minutes discussing options",
+                    "Value engineering proposals",
+                    "Client correspondence"
+                ]
+            },
+            "contract_administration_challenges": {
+                "title": "Complex Variation Management",
+                "description": "Managing significant variations while maintaining programme and budget",
+                "typical_scenarios": [
+                    "Client-instructed design changes mid-construction",
+                    "Regulatory requirement changes affecting scope",
+                    "Unforeseen utility diversions required",
+                    "Weather-related programme extensions",
+                    "Specification upgrades for performance requirements"
+                ],
+                "options_framework": [
+                    "Standard contract variation procedure",
+                    "Negotiate lump sum settlement",
+                    "Implement daywork rates",
+                    "Seek time extension with costs",
+                    "Dispute and refer to adjudication"
+                ],
+                "competencies_demonstrated": [
+                    "Contract practice (Level 3)",
+                    "Commercial management of construction (Level 3)",
+                    "Quantification and costing of construction works (Level 2)",
+                    "Conflict avoidance, management and dispute resolution (Level 2)",
+                    "Communication and negotiation (Level 3)"
+                ],
+                "evidence_to_collect": [
+                    "Variation instructions and valuations",
+                    "Programme impact assessments",
+                    "Negotiation correspondence",
+                    "Cost build-ups and supporting calculations",
+                    "Contract clause references"
+                ]
+            },
+            "procurement_and_tendering": {
+                "title": "Subcontractor Procurement Challenges",
+                "description": "Difficulties in procuring suitable subcontractors within budget and programme",
+                "typical_scenarios": [
+                    "Limited market interest in specialist works",
+                    "All tenders received over budget allowance",
+                    "Preferred contractor fails financial checks",
+                    "Late design information affecting tender returns",
+                    "Skills shortage in local market"
+                ],
+                "options_framework": [
+                    "Expand geographical search area",
+                    "Split package into smaller lots",
+                    "Consider alternative technical solutions",
+                    "Negotiate directly with preferred bidder",
+                    "Delay works to improve market conditions"
+                ],
+                "competencies_demonstrated": [
+                    "Procurement and tendering (Level 3)",
+                    "Commercial management of construction (Level 2)",
+                    "Communication and negotiation (Level 2)",
+                    "Contract practice (Level 2)",
+                    "Project financial control and reporting (Level 2)"
+                ],
+                "evidence_to_collect": [
+                    "Tender documents and analysis",
+                    "Market research evidence",
+                    "Risk assessments",
+                    "Recommendation reports",
+                    "Final procurement strategy"
+                ]
+            },
+            "measurement_and_valuation_disputes": {
+                "title": "Final Account Disagreement",
+                "description": "Significant disagreement on measurement and valuation requiring resolution",
+                "typical_scenarios": [
+                    "Disputed measurement of complex steelwork",
+                    "Disagreement on daywork rates and hours",
+                    "Retention release conditions not met",
+                    "Claims for prolongation and disruption",
+                    "Defects rectification cost disputes"
+                ],
+                "options_framework": [
+                    "Independent expert determination",
+                    "Mediation between parties",
+                    "Detailed re-measurement exercise",
+                    "Negotiate global settlement",
+                    "Formal adjudication process"
+                ],
+                "competencies_demonstrated": [
+                    "Quantification and costing of construction works (Level 3)",
+                    "Conflict avoidance, management and dispute resolution (Level 3)",
+                    "Contract practice (Level 3)",
+                    "Communication and negotiation (Level 3)",
+                    "Ethics, rules of conduct and professionalism (Level 2)"
+                ],
+                "evidence_to_collect": [
+                    "Measurement records and calculations",
+                    "Supporting drawings and specifications",
+                    "Site records and photographs",
+                    "Correspondence trail",
+                    "Expert reports or opinions"
+                ]
+            },
+            "programme_and_cash_flow": {
+                "title": "Cash Flow and Payment Issues",
+                "description": "Managing cash flow problems affecting project delivery",
+                "typical_scenarios": [
+                    "Client delaying interim payments",
+                    "Subcontractor cash flow difficulties",
+                    "Front-loaded programme requiring high early spend",
+                    "Retention limits affecting working capital",
+                    "Payment application disputes causing delays"
+                ],
+                "options_framework": [
+                    "Renegotiate payment terms",
+                    "Seek alternative financing arrangements",
+                    "Implement programme acceleration",
+                    "Request advance payments",
+                    "Enforce payment notice procedures"
+                ],
+                "competencies_demonstrated": [
+                    "Project financial control and reporting (Level 3)",
+                    "Commercial management of construction (Level 2)",
+                    "Contract practice (Level 2)",
+                    "Accounting principles and procedures (Level 1)",
+                    "Communication and negotiation (Level 2)"
+                ],
+                "evidence_to_collect": [
+                    "Cash flow forecasts",
+                    "Payment applications and certificates",
+                    "Correspondence with client/bank",
+                    "Programme analysis",
+                    "Working capital calculations"
+                ]
+            },
+            "risk_management": {
+                "title": "Significant Risk Materialization",
+                "description": "Major project risk becoming reality requiring mitigation strategy",
+                "typical_scenarios": [
+                    "Archaeological finds halting excavation",
+                    "Key subcontractor insolvency",
+                    "Material supply chain disruption",
+                    "Extreme weather affecting programme",
+                    "Planning condition compliance issues"
+                ],
+                "options_framework": [
+                    "Implement contingency plans",
+                    "Transfer risk through insurance claims",
+                    "Renegotiate contract risk allocation",
+                    "Seek time and cost extensions",
+                    "Develop alternative delivery methods"
+                ],
+                "competencies_demonstrated": [
+                    "Commercial management of construction (Level 3)",
+                    "Project financial control and reporting (Level 2)",
+                    "Contract practice (Level 2)",
+                    "Communication and negotiation (Level 2)",
+                    "Client care (Level 2)"
+                ],
+                "evidence_to_collect": [
+                    "Risk registers and assessments",
+                    "Mitigation strategy documents",
+                    "Insurance correspondence",
+                    "Impact assessments",
+                    "Stakeholder communications"
+                ]
+            }
+        }
+    
+    # NEW: Competency Mapping Tools for Quantity Surveying
+    def _get_qs_competency_mapping(self) -> Dict[str, Any]:
+        """Get quantity surveying competency mapping tools."""
+        return {
+            "core_competencies": {
+                "commercial_management_of_construction": {
+                    "level_1_requirements": {
+                        "knowledge_descriptor": "Understanding of project costs, CVRs, and cost management principles",
+                        "example_evidence": [
+                            "Attended training on cost management systems",
+                            "Studied company procedures for CVR preparation",
+                            "Researched earned value analysis techniques",
+                            "Learned about value engineering principles"
+                        ],
+                        "typical_activities": [
+                            "Assisting with CVR preparation",
+                            "Inputting cost data into systems",
+                            "Observing value engineering exercises",
+                            "Learning cost codes and structures"
+                        ]
+                    },
+                    "level_2_requirements": {
+                        "knowledge_descriptor": "Application of cost management techniques on real projects",
+                        "example_evidence": [
+                            "Prepared monthly CVRs for £2M project",
+                            "Conducted cost/benefit analysis for design options",
+                            "Managed subcontractor cost reporting",
+                            "Implemented earned value analysis"
+                        ],
+                        "typical_activities": [
+                            "Regular CVR preparation and reporting",
+                            "Cost forecasting and variance analysis",
+                            "Value engineering implementation",
+                            "Cost benchmarking exercises"
+                        ]
+                    },
+                    "level_3_requirements": {
+                        "knowledge_descriptor": "Providing reasoned advice on commercial strategy and complex cost issues",
+                        "example_evidence": [
+                            "Advised client on procurement strategy saving £500k",
+                            "Developed commercial recovery plan for troubled project",
+                            "Recommended contract amendments to improve cost certainty",
+                            "Led value engineering workshop saving 15% on costs"
+                        ],
+                        "typical_activities": [
+                            "Strategic commercial advice to senior management",
+                            "Complex cost dispute resolution",
+                            "Commercial risk assessment and mitigation",
+                            "Leading cost management initiatives"
+                        ],
+                        "reasoned_advice_examples": [
+                            "Recommended target cost contract over lump sum due to design uncertainty, reducing client risk exposure by £200k",
+                            "Advised against lowest tender due to insufficient programme float, preventing potential £1M delay costs",
+                            "Proposed phased handover strategy to accelerate client revenue generation by 6 months"
+                        ]
+                    }
+                },
+                "contract_practice": {
+                    "level_1_requirements": {
+                        "knowledge_descriptor": "Understanding of contract formation, standard forms, and key provisions",
+                        "example_evidence": [
+                            "Studied JCT, NEC, and FIDIC contract forms",
+                            "Attended training on Construction Act payment provisions",
+                            "Researched case law on contract interpretation",
+                            "Learned about collateral warranties and bonds"
+                        ]
+                    },
+                    "level_2_requirements": {
+                        "knowledge_descriptor": "Practical application of contract procedures and administration",
+                        "example_evidence": [
+                            "Administered NEC3 contract including compensation events",
+                            "Prepared and issued payment notices under Construction Act",
+                            "Managed contract variations totaling £800k",
+                            "Drafted subcontract terms back-to-back with main contract"
+                        ]
+                    },
+                    "level_3_requirements": {
+                        "knowledge_descriptor": "Advising on complex contract issues and dispute resolution",
+                        "reasoned_advice_examples": [
+                            "Advised against liquidated damages clause due to client-caused delays, preventing wrongful deduction of £150k",
+                            "Recommended early contractor involvement to reduce design risk, improving programme certainty by 8 weeks",
+                            "Proposed contract amendment for shared savings mechanism, improving collaborative working"
+                        ]
+                    }
+                },
+                "quantification_and_costing": {
+                    "level_1_requirements": {
+                        "knowledge_descriptor": "Understanding of measurement rules and costing principles",
+                        "example_evidence": [
+                            "Studied NRM2 and CESMM4 measurement rules",
+                            "Learned about different measurement methods and applications",
+                            "Researched pricing databases and cost sources",
+                            "Understanding of labour, plant, and material rates"
+                        ]
+                    },
+                    "level_2_requirements": {
+                        "knowledge_descriptor": "Practical measurement and valuation of construction works",
+                        "example_evidence": [
+                            "Measured and valued variations worth £1.2M using NRM2",
+                            "Prepared interim valuations for 18-month project",
+                            "Negotiated rates for new work items not in original BOQ",
+                            "Agreed final account within 5% of forecast"
+                        ]
+                    },
+                    "level_3_requirements": {
+                        "knowledge_descriptor": "Complex measurement issues and providing valuation advice",
+                        "reasoned_advice_examples": [
+                            "Advised on measurement methodology for complex curved facade, establishing precedent for future projects",
+                            "Recommended daywork rates for emergency works to ensure fair valuation under time pressure",
+                            "Developed bespoke measurement approach for refurbishment works where standard rules insufficient"
+                        ]
+                    }
+                },
+                "project_financial_control": {
+                    "level_3_requirements": {
+                        "reasoned_advice_examples": [
+                            "Implemented accrual accounting system improving cost visibility by 95%, enabling early intervention on budget variances",
+                            "Advised on cash flow acceleration through revised payment terms, improving working capital by £2M",
+                            "Developed risk-based contingency model, optimizing reserve allocation and reducing overall project costs by 3%"
+                        ]
+                    }
+                },
+                "procurement_and_tendering": {
+                    "level_3_requirements": {
+                        "reasoned_advice_examples": [
+                            "Recommended two-stage tendering for complex M&E package, reducing design risk and improving contractor buy-in",
+                            "Advised on framework vs single project procurement, delivering 12% cost savings through aggregated buying power",
+                            "Proposed alternative technical solutions during tender clarifications, achieving £300k saving without compromising quality"
+                        ]
+                    }
+                }
+            },
+            "issue_competency_matrix": {
+                "cost_overrun_budget_recovery": {
+                    "primary_competencies": [
+                        "Commercial management of construction (Level 3)",
+                        "Project financial control and reporting (Level 3)",
+                        "Quantification and costing of construction works (Level 3)"
+                    ],
+                    "secondary_competencies": [
+                        "Communication and negotiation (Level 2)",
+                        "Contract practice (Level 2)",
+                        "Client care (Level 2)"
+                    ]
+                },
+                "variation_management": {
+                    "primary_competencies": [
+                        "Contract practice (Level 3)",
+                        "Quantification and costing of construction works (Level 3)",
+                        "Commercial management of construction (Level 2)"
+                    ],
+                    "secondary_competencies": [
+                        "Communication and negotiation (Level 3)",
+                        "Conflict avoidance and dispute resolution (Level 2)"
+                    ]
+                },
+                "procurement_challenges": {
+                    "primary_competencies": [
+                        "Procurement and tendering (Level 3)",
+                        "Commercial management of construction (Level 2)",
+                        "Communication and negotiation (Level 2)"
+                    ],
+                    "secondary_competencies": [
+                        "Contract practice (Level 2)",
+                        "Project financial control and reporting (Level 2)"
+                    ]
+                },
+                "final_account_disputes": {
+                    "primary_competencies": [
+                        "Quantification and costing of construction works (Level 3)",
+                        "Conflict avoidance and dispute resolution (Level 3)",
+                        "Contract practice (Level 3)"
+                    ],
+                    "secondary_competencies": [
+                        "Communication and negotiation (Level 3)",
+                        "Ethics and professional conduct (Level 2)"
+                    ]
+                }
+            },
+            "level_3_advice_framework": {
+                "decision_making_process": [
+                    "1. Problem identification and analysis",
+                    "2. Stakeholder impact assessment",
+                    "3. Option generation and evaluation",
+                    "4. Risk assessment and mitigation",
+                    "5. Cost-benefit analysis",
+                    "6. Recommendation with clear rationale",
+                    "7. Implementation planning",
+                    "8. Success measurement criteria"
+                ],
+                "evidence_requirements": [
+                    "Clear statement of the advice given",
+                    "Explanation of the analysis undertaken",
+                    "Justification for the recommendation",
+                    "Evidence of implementation",
+                    "Measurement of outcomes achieved"
+                ],
+                "quality_indicators": [
+                    "Demonstrates technical competence",
+                    "Shows commercial awareness",
+                    "Considers multiple stakeholder perspectives",
+                    "Balances cost, time, quality, and risk",
+                    "Provides measurable benefits",
+                    "Follows ethical and professional standards"
+                ]
+            },
+            "competency_demonstration_checklist": {
+                "mandatory_competencies": {
+                    "must_achieve_level_2": [
+                        "Ethics, rules of conduct and professionalism",
+                        "Client care",
+                        "Communication and negotiation",
+                        "Health and safety",
+                        "Accounting principles and procedures",
+                        "Business planning",
+                        "Conflict avoidance, management and dispute resolution",
+                        "Data management",
+                        "Diversity, inclusion and teamworking",
+                        "Inclusive environments",
+                        "Sustainability"
+                    ]
+                },
+                "core_technical_competencies": {
+                    "must_achieve_level_3": [
+                        "Commercial management of construction",
+                        "Contract practice",
+                        "Construction technology and environmental services",
+                        "Procurement and tendering",
+                        "Project financial control and reporting",
+                        "Quantification and costing of construction works"
+                    ]
+                },
+                "optional_technical_competencies": {
+                    "choose_2_achieve_level_2": [
+                        "Contract administration",
+                        "Programming and planning",
+                        "Risk management",
+                        "Value management",
+                        "Project management",
+                        "Construction law",
+                        "Insolvency",
+                        "Expert witness"
+                    ]
+                }
+            },
+            "writing_guidance": {
+                "level_3_evidence_structure": {
+                    "situation": "Describe the context and challenge faced",
+                    "task": "Explain your specific role and responsibilities",
+                    "action": "Detail the analysis, options considered, and advice given",
+                    "result": "Quantify the outcome and lessons learned"
+                },
+                "professional_language_examples": {
+                    "weak": "I helped with the cost report",
+                    "strong": "I prepared comprehensive monthly CVRs, analyzing variances and forecasting final account position with 95% accuracy"
+                },
+                "quantification_examples": [
+                    "Achieved cost savings of £250k (8% of project value)",
+                    "Reduced programme duration by 6 weeks through value engineering",
+                    "Negotiated final account settlement within 2% of forecast",
+                    "Improved cash flow by £500k through payment term renegotiation"
+                ]
+            }
+        }
+
+    # NEW: Competency-specific templates
+    def _get_competency_templates(self) -> Dict[str, Dict[str, str]]:
+        """Get templates for different competencies."""
+        return {
+            "commercial_management": {
+                "level_1": """Understanding of cost components (labour, plant, materials, overheads), CVR compilation, 
+                value engineering principles, subcontractor management basics, and cost/benefit analysis concepts.""",
+                "level_2": """Experience in cost forecasting, change management, interim valuations, earned value analysis, 
+                subcontractor procurement, and financial reporting to senior management.""",
+                "level_3": """Providing strategic cost advice to project teams and clients, leading commercial decisions, 
+                implementing innovative cost management solutions, and advising on complex commercial issues with 
+                significant financial implications."""
+            },
+            "contract_practice": {
+                "level_1": """Knowledge of contract formation principles, standard forms (JCT, NEC, FIDIC), 
+                statutory requirements (HGCRA, LDEDCA), and basic contract mechanisms.""",
+                "level_2": """Experience administering contracts, managing variations and change control, 
+                payment processes, and subcontract arrangements using standard forms.""",
+                "level_3": """Advising on contract strategy, complex contractual interpretations, dispute resolution, 
+                and providing reasoned advice on contractual risks and opportunities."""
+            },
+            "project_financial_control": {
+                "level_1": """Understanding of CVR compilation, cost monitoring techniques, forecasting principles, 
+                and change control procedures.""",
+                "level_2": """Experience in budget management, cost reporting, variance analysis, and implementing 
+                cost control systems on live projects.""",
+                "level_3": """Providing strategic financial advice, implementing improved cost control systems, 
+                and advising on complex financial scenarios with significant project implications."""
+            },
+            "procurement_and_tendering": {
+                "level_1": """Knowledge of procurement routes, tendering procedures, evaluation criteria, 
+                and EU procurement regulations.""",
+                "level_2": """Experience in tender preparation, evaluation processes, contractor selection, 
+                and managing procurement exercises.""",
+                "level_3": """Advising on procurement strategy, complex tender evaluations, and providing 
+                reasoned advice on contractor selection with significant commercial implications."""
+            },
+            "quantification_and_costing": {
+                "level_1": """Understanding of measurement rules (NRM, CESMM), pricing principles, 
+                and basic cost analysis techniques.""",
+                "level_2": """Experience in taking off quantities, pricing variations, interim valuations, 
+                and final account preparation.""",
+                "level_3": """Providing expert advice on complex measurement issues, innovative costing approaches, 
+                and resolving disputes over quantities and pricing."""
+            }
+        }
+    
+    # NEW: Competency mapping
+    def _analyze_user_experience_for_competencies(self, user_data: str) -> Dict[str, Any]:
+        """Analyze user's experience and suggest which competencies they can demonstrate."""
+        competency_keywords = {
+            "commercial_management": ["cost", "commercial", "budget", "CVR", "value engineering", "subcontractor", "profit"],
+            "contract_practice": ["contract", "NEC", "JCT", "variation", "change", "dispute", "payment", "clause"],
+            "project_financial_control": ["forecast", "budget", "financial", "reporting", "variance", "cash flow"],
+            "procurement_and_tendering": ["tender", "procurement", "contractor selection", "evaluation", "quotation"],
+            "quantification_and_costing": ["measurement", "quantities", "pricing", "rates", "valuation", "CESMM", "NRM"]
+        }
+        
+        analysis = {
+            "suggested_competencies": [],
+            "strength_indicators": {},
+            "experience_gaps": [],
+            "suitable_projects": []
+        }
+        
+        user_text = user_data.lower()
+        
+        for competency, keywords in competency_keywords.items():
+            matches = sum(1 for keyword in keywords if keyword in user_text)
+            strength = "strong" if matches >= 5 else "moderate" if matches >= 3 else "weak"
+            
+            if matches >= 3:
+                analysis["suggested_competencies"].append(competency)
+                analysis["strength_indicators"][competency] = {
+                    "strength": strength,
+                    "keyword_matches": matches,
+                    "keywords_found": [kw for kw in keywords if kw in user_text]
+                }
+            else:
+                analysis["experience_gaps"].append(competency)
+        
+        return analysis
+    
+    # NEW: Content quality checker
+    def _validate_case_study_content(self, content: str) -> Dict[str, Any]:
+        """Validate case study against RICS requirements."""
+        
+        def count_words(text: str) -> int:
+            return len(text.split())
+        
+        def check_structure(text: str) -> Dict[str, bool]:
+            required_sections = ["introduction", "approach", "achievement", "conclusion"]
+            section_checks = {}
+            
+            for section in required_sections:
+                # Check for section headers (case insensitive)
+                pattern = rf"\b{section}\b"
+                section_checks[section] = bool(re.search(pattern, text, re.IGNORECASE))
+            
+            return section_checks
+        
+        def assess_reflection_depth(text: str) -> Dict[str, Any]:
+            reflection_indicators = [
+                "learnt", "learning", "reflect", "improved", "develop", "experience", 
+                "future", "better", "mistake", "challenge", "growth"
+            ]
+            
+            reflection_count = sum(1 for indicator in reflection_indicators if indicator in text.lower())
+            
+            return {
+                "reflection_indicators_found": reflection_count,
+                "depth_assessment": "strong" if reflection_count >= 8 else "moderate" if reflection_count >= 4 else "weak",
+                "suggestions": self._generate_reflection_suggestions(reflection_count)
+            }
+        
+        word_count = count_words(content)
+        structure_check = check_structure(content)
+        reflection_assessment = assess_reflection_depth(content)
+        
+        validation_result = {
+            "word_count": {
+                "current": word_count,
+                "target": 3000,
+                "status": "within_limit" if word_count <= 3000 else "over_limit",
+                "percentage_used": round((word_count / 3000) * 100, 1)
+            },
+            "structure_check": structure_check,
+            "structure_score": sum(structure_check.values()) / len(structure_check),
+            "reflection_quality": reflection_assessment,
+            "overall_score": self._calculate_overall_score(word_count, structure_check, reflection_assessment),
+            "improvement_suggestions": self._generate_improvement_suggestions(word_count, structure_check, reflection_assessment)
+        }
+        
+        return validation_result
+    
+    def _generate_reflection_suggestions(self, reflection_count: int) -> List[str]:
+        """Generate suggestions for improving reflection."""
+        suggestions = []
+        
+        if reflection_count < 4:
+            suggestions.extend([
+                "Add more reflection on what you learned from the experience",
+                "Include discussion of how this experience will influence future practice",
+                "Reflect on both positive outcomes and areas for improvement"
+            ])
+        elif reflection_count < 8:
+            suggestions.extend([
+                "Deepen your reflection with more specific examples",
+                "Consider adding reflection on professional development gained"
+            ])
+        
+        return suggestions
+    
+    def _calculate_overall_score(self, word_count: int, structure_check: Dict[str, bool], reflection_assessment: Dict[str, Any]) -> float:
+        """Calculate an overall quality score."""
+        word_score = 1.0 if word_count <= 3000 else max(0.5, 3000 / word_count)
+        structure_score = sum(structure_check.values()) / len(structure_check)
+        reflection_score = {"strong": 1.0, "moderate": 0.7, "weak": 0.4}[reflection_assessment["depth_assessment"]]
+        
+        return round((word_score * 0.3 + structure_score * 0.4 + reflection_score * 0.3), 2)
+    
+    def _generate_improvement_suggestions(self, word_count: int, structure_check: Dict[str, bool], reflection_assessment: Dict[str, Any]) -> List[str]:
+        """Generate specific improvement suggestions."""
+        suggestions = []
+        
+        if word_count > 3000:
+            suggestions.append(f"Reduce word count by {word_count - 3000} words to meet the 3000 word limit")
+        
+        missing_sections = [section for section, present in structure_check.items() if not present]
+        if missing_sections:
+            suggestions.append(f"Add missing sections: {', '.join(missing_sections)}")
+        
+        suggestions.extend(reflection_assessment["suggestions"])
+        
+        return suggestions
+    
+    # NEW: Quality Assurance Features
+    def _check_confidentiality_compliance(self, content: str) -> List[str]:
+        """Check for potential confidentiality breaches."""
+        warnings = []
+        
+        # Check for specific patterns that might indicate confidentiality issues
+        patterns = {
+            "specific_amounts": r"£[\d,]+\.?\d*",
+            "company_names": r"\b[A-Z][a-z]+ (Ltd|Limited|Corporation|Corp|Inc)\b",
+            "personal_names": r"\b[A-Z][a-z]+ [A-Z][a-z]+\b",
+            "phone_numbers": r"\b\d{4,5}\s?\d{6}\b",
+            "email_addresses": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
+        }
+        
+        for pattern_name, pattern in patterns.items():
+            matches = re.findall(pattern, content)
+            if matches:
+                warnings.append(f"Potential confidentiality issue - {pattern_name}: {len(matches)} instances found")
+        
+        return warnings
+    
+    def _assess_competency_demonstration_strength(self, content: str, competency: str) -> Dict[str, Any]:
+        """Assess how well content demonstrates specific competencies."""
+        competency_templates = self._get_competency_templates()
+        
+        if competency not in competency_templates:
+            return {"error": f"Unknown competency: {competency}"}
+        
+        # Extract key terms from the competency template
+        level_3_indicators = [
+            "advised", "recommended", "strategic", "complex", "innovative", 
+            "leadership", "decision", "significant", "critical", "expert"
+        ]
+        
+        content_lower = content.lower()
+        level_3_count = sum(1 for indicator in level_3_indicators if indicator in content_lower)
+        
+        # Look for specific evidence patterns
+        evidence_patterns = [
+            r"£[\d,]+", r"\d+%", r"\d+ weeks?", r"\d+ months?", 
+            "saved", "reduced", "improved", "implemented"
+        ]
+        
+        evidence_count = sum(len(re.findall(pattern, content)) for pattern in evidence_patterns)
+        
+        assessment = {
+            "strength": "strong" if level_3_count >= 5 and evidence_count >= 3 else 
+                       "moderate" if level_3_count >= 3 or evidence_count >= 2 else "weak",
+            "level_3_indicators": level_3_count,
+            "evidence_count": evidence_count,
+            "level_demonstration": "clearly L3" if level_3_count >= 5 else "needs enhancement",
+            "suggestions": self._generate_competency_suggestions(level_3_count, evidence_count)
+        }
+        
+        return assessment
+    
+    def _generate_competency_suggestions(self, level_3_count: int, evidence_count: int) -> List[str]:
+        """Generate suggestions for improving competency demonstration."""
+        suggestions = []
+        
+        if level_3_count < 3:
+            suggestions.append("Include more examples of strategic advice and complex decision-making")
+        
+        if evidence_count < 2:
+            suggestions.append("Add quantified outcomes (cost savings, time reductions, etc.)")
+        
+        if level_3_count < 5:
+            suggestions.append("Strengthen demonstration of Level 3 competency with more leadership examples")
+        
+        return suggestions
+    
+    # NEW: AI-assisted content enhancement
+    def _enhance_reflection_section(self, basic_reflection: str, project_context: str) -> str:
+        """Enhance reflection with deeper analysis and professional insights."""
+        enhanced_reflection = f"""
+**Enhanced Reflection on {project_context}:**
+
+{basic_reflection}
+
+**Professional Development Analysis:**
+This experience significantly enhanced my professional capabilities in several key areas:
+
+**Technical Skills:** The project challenged me to develop advanced cost management techniques, particularly in [specific area]. This experience demonstrated the importance of continuous learning and adaptation in complex project environments.
+
+**Leadership and Decision-Making:** The key decisions I made, particularly around [specific decision], required careful consideration of multiple stakeholders' interests and demonstrated my ability to provide Level 3 professional advice.
+
+**Future Practice Implications:**
+- **Process Improvements:** I will implement [specific improvements] in future projects based on lessons learned
+- **Risk Management:** This experience highlighted the importance of [specific risk management approach]
+- **Stakeholder Engagement:** Future projects will benefit from [enhanced stakeholder management approach]
+
+**Competency Development:**
+This project provided substantial evidence for demonstrating RICS competencies at Level 3, particularly in areas of strategic thinking, complex problem-solving, and professional leadership.
+"""
+        return enhanced_reflection
+    
+    def _generate_options_analysis(self, issue_description: str, industry: str) -> str:
+        """Generate realistic options analysis for given issues."""
+        
+        industry_factors = {
+            "rail": {
+                "considerations": ["possession constraints", "safety requirements", "Network Rail standards"],
+                "typical_costs": "£50k-500k for minor works, £1M+ for major interventions",
+                "timeframes": "6-18 months including approvals"
+            },
+            "commercial": {
+                "considerations": ["tenant disruption", "retail trading impact", "planning constraints"],
+                "typical_costs": "£100k-2M depending on scale",
+                "timeframes": "3-12 months typical delivery"
+            },
+            "infrastructure": {
+                "considerations": ["public impact", "utility diversions", "environmental constraints"],
+                "typical_costs": "£500k-10M+ for major works",
+                "timeframes": "12-36 months including consents"
+            }
+        }
+        
+        factors = industry_factors.get(industry, industry_factors["commercial"])
+        
+        analysis = f"""
+**Options Analysis for: {issue_description}**
+
+**Option 1: [Conservative Approach]**
+- Cost Impact: {factors['typical_costs']} (lower end)
+- Programme Impact: Standard timeframe - {factors['timeframes']}
+- Key Considerations: {', '.join(factors['considerations'])}
+- Risk Level: Low - proven methodology
+- Benefits: Minimal disruption, established processes
+
+**Option 2: [Innovative Solution]**
+- Cost Impact: Premium of 15-25% for innovation
+- Programme Impact: Potential 20-30% time saving
+- Key Considerations: Technology adoption, specialist resources
+- Risk Level: Medium - new methodology requires validation
+- Benefits: Efficiency gains, potential for future replication
+
+**Option 3: [Hybrid Approach]**
+- Cost Impact: Balanced cost profile
+- Programme Impact: Optimized timeline balancing risk and efficiency
+- Key Considerations: Combines proven and innovative elements
+- Risk Level: Medium-Low - managed innovation
+- Benefits: Best of both approaches with controlled risk
+
+**Evaluation Criteria:**
+1. Cost effectiveness and value for money
+2. Programme delivery certainty
+3. Quality and performance outcomes
+4. Risk profile and mitigation
+5. Stakeholder impact and acceptance
+"""
+        return analysis
+
     async def handle_list_resources(self) -> List[types.Resource]:
         """List all JSON files in the mcp_resource directory."""
         resources = []
@@ -321,6 +1113,201 @@ class APCCaseStudyServer:
                         }
                     },
                     "required": ["section_type"]
+                }
+            ),
+            # NEW QS-SPECIFIC TOOLS
+            types.Tool(
+                name="get_issue_template",
+                description="Get detailed template for specific QS issue/challenge type",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "issue_type": {
+                            "type": "string",
+                            "enum": [
+                                "cost_control_and_budget_management",
+                                "contract_administration_challenges", 
+                                "procurement_and_tendering",
+                                "measurement_and_valuation_disputes",
+                                "programme_and_cash_flow",
+                                "risk_management"
+                            ],
+                            "description": "Type of QS issue/challenge"
+                        }
+                    },
+                    "required": ["issue_type"]
+                }
+            ),
+            types.Tool(
+                name="get_competency_guidance",
+                description="Get detailed guidance for demonstrating specific QS competency at required level",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "competency": {
+                            "type": "string",
+                            "enum": [
+                                "commercial_management_of_construction",
+                                "contract_practice",
+                                "quantification_and_costing",
+                                "project_financial_control",
+                                "procurement_and_tendering",
+                                "construction_technology"
+                            ],
+                            "description": "RICS competency name"
+                        },
+                        "level": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 3,
+                            "description": "Required competency level"
+                        }
+                    },
+                    "required": ["competency", "level"]
+                }
+            ),
+            types.Tool(
+                name="map_issue_to_competencies",
+                description="Show which competencies can be demonstrated through specific issue types",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "issue_type": {
+                            "type": "string",
+                            "enum": [
+                                "cost_control_and_budget_management",
+                                "contract_administration_challenges",
+                                "procurement_and_tendering", 
+                                "measurement_and_valuation_disputes",
+                                "programme_and_cash_flow",
+                                "risk_management"
+                            ],
+                            "description": "Type of issue being used in case study"
+                        }
+                    },
+                    "required": ["issue_type"]
+                }
+            ),
+            types.Tool(
+                name="get_level_3_advice_framework",
+                description="Get structured framework for demonstrating Level 3 competencies with reasoned advice",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            ),
+            types.Tool(
+                name="analyze_user_competency_gaps",
+                description="Analyze user's experience against pathway requirements and identify gaps",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "pathway": {
+                            "type": "string", 
+                            "enum": ["quantity_surveying", "building_surveying", "project_management"],
+                            "description": "APC pathway to analyze against"
+                        },
+                        "target_competencies": {
+                            "type": "array", 
+                            "items": {"type": "string"},
+                            "description": "List of competencies to focus analysis on"
+                        }
+                    },
+                    "required": ["pathway"]
+                }
+            ),
+            types.Tool(
+                name="generate_competency_evidence",
+                description="Generate specific evidence statements for competencies based on user's projects",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "competency": {
+                            "type": "string",
+                            "description": "Specific competency to generate evidence for"
+                        },
+                        "level": {
+                            "type": "integer", 
+                            "minimum": 1, 
+                            "maximum": 3,
+                            "description": "Target competency level"
+                        },
+                        "project_context": {
+                            "type": "string",
+                            "description": "Project or context for the evidence"
+                        }
+                    },
+                    "required": ["competency", "level", "project_context"]
+                }
+            ),
+            types.Tool(
+                name="validate_case_study_structure",
+                description="Validate case study against RICS requirements and provide improvement suggestions",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "case_study_text": {
+                            "type": "string",
+                            "description": "The case study content to validate"
+                        },
+                        "pathway": {
+                            "type": "string",
+                            "description": "APC pathway for validation"
+                        }
+                    },
+                    "required": ["case_study_text"]
+                }
+            ),
+            types.Tool(
+                name="enhance_reflection_content",
+                description="Enhance reflection section with deeper analysis and professional insights",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "basic_reflection": {
+                            "type": "string",
+                            "description": "Basic reflection content to enhance"
+                        },
+                        "project_context": {
+                            "type": "string",
+                            "description": "Project context for the reflection"
+                        }
+                    },
+                    "required": ["basic_reflection", "project_context"]
+                }
+            ),
+            types.Tool(
+                name="generate_options_analysis",
+                description="Generate realistic options analysis for project issues",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "issue_description": {
+                            "type": "string",
+                            "description": "Description of the issue requiring options analysis"
+                        },
+                        "industry": {
+                            "type": "string",
+                            "enum": ["rail", "commercial", "infrastructure", "residential", "healthcare"],
+                            "description": "Industry context for the analysis"
+                        }
+                    },
+                    "required": ["issue_description", "industry"]
+                }
+            ),
+            types.Tool(
+                name="check_confidentiality_compliance",
+                description="Check case study content for potential confidentiality breaches",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "string",
+                            "description": "Content to check for confidentiality issues"
+                        }
+                    },
+                    "required": ["content"]
                 }
             )
         ]
@@ -624,6 +1611,428 @@ KEY REQUIREMENTS:
                 text=f"Error extracting sections: {str(e)}"
             )]
     
+    # NEW QS-SPECIFIC TOOL HANDLERS
+    async def _handle_get_issue_template(self, issue_type: str) -> List[types.TextContent]:
+        """Handle getting issue template."""
+        try:
+            templates = self._get_qs_issue_templates()
+            
+            if issue_type not in templates:
+                available = ", ".join(templates.keys())
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: Unknown issue type '{issue_type}'. Available types: {available}"
+                )]
+            
+            template = templates[issue_type]
+            
+            result = f"""
+**QS Issue Template: {template['title']}**
+
+**Description:** {template['description']}
+
+**Typical Scenarios:**
+{chr(10).join(f"• {scenario}" for scenario in template['typical_scenarios'])}
+
+**Options Framework:**
+{chr(10).join(f"• {option}" for option in template['options_framework'])}
+
+**Competencies Demonstrated:**
+{chr(10).join(f"• {comp}" for comp in template['competencies_demonstrated'])}
+
+**Evidence to Collect:**
+{chr(10).join(f"• {evidence}" for evidence in template['evidence_to_collect'])}
+
+**Case Study Structure Suggestions:**
+1. **Problem Statement:** Describe which scenario occurred and why it was significant
+2. **Options Analysis:** Evaluate the options framework systematically
+3. **Decision Making:** Explain your recommendation and rationale
+4. **Implementation:** Detail how the solution was executed
+5. **Outcomes:** Quantify the results and lessons learned
+"""
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error getting issue template: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error getting issue template: {str(e)}"
+            )]
+    
+    async def _handle_get_competency_guidance(self, competency: str, level: int) -> List[types.TextContent]:
+        """Handle getting competency guidance."""
+        try:
+            mapping = self._get_qs_competency_mapping()
+            core_competencies = mapping.get("core_competencies", {})
+            
+            if competency not in core_competencies:
+                available = ", ".join(core_competencies.keys())
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: Unknown competency '{competency}'. Available: {available}"
+                )]
+            
+            comp_data = core_competencies[competency]
+            level_key = f"level_{level}_requirements"
+            
+            if level_key not in comp_data:
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: Level {level} guidance not available for {competency}"
+                )]
+            
+            level_data = comp_data[level_key]
+            
+            result = f"""
+**{competency.replace('_', ' ').title()} - Level {level} Guidance**
+
+**Knowledge Descriptor:**
+{level_data['knowledge_descriptor']}
+
+**Example Evidence:**
+{chr(10).join(f"• {evidence}" for evidence in level_data.get('example_evidence', []))}
+
+**Typical Activities:**
+{chr(10).join(f"• {activity}" for activity in level_data.get('typical_activities', []))}
+"""
+            
+            if level == 3 and 'reasoned_advice_examples' in level_data:
+                result += f"""
+
+**Reasoned Advice Examples:**
+{chr(10).join(f"• {example}" for example in level_data['reasoned_advice_examples'])}
+"""
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error getting competency guidance: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error getting competency guidance: {str(e)}"
+            )]
+    
+    async def _handle_map_issue_to_competencies(self, issue_type: str) -> List[types.TextContent]:
+        """Handle mapping issues to competencies."""
+        try:
+            mapping = self._get_qs_competency_mapping()
+            issue_matrix = mapping.get("issue_competency_matrix", {})
+            
+            # Map issue types to matrix keys
+            issue_mapping = {
+                "cost_control_and_budget_management": "cost_overrun_budget_recovery",
+                "contract_administration_challenges": "variation_management",
+                "procurement_and_tendering": "procurement_challenges",
+                "measurement_and_valuation_disputes": "final_account_disputes"
+            }
+            
+            matrix_key = issue_mapping.get(issue_type, issue_type)
+            
+            if matrix_key not in issue_matrix:
+                available = ", ".join(issue_matrix.keys())
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: No competency mapping found for '{issue_type}'. Available: {available}"
+                )]
+            
+            competency_map = issue_matrix[matrix_key]
+            
+            result = f"""
+**Competency Mapping for: {issue_type.replace('_', ' ').title()}**
+
+**Primary Competencies (Main focus for case study):**
+{chr(10).join(f"• {comp}" for comp in competency_map['primary_competencies'])}
+
+**Secondary Competencies (Supporting evidence):**
+{chr(10).join(f"• {comp}" for comp in competency_map['secondary_competencies'])}
+
+**Recommendation:**
+Focus your case study on demonstrating the primary competencies at the specified levels. Use the secondary competencies to provide supporting evidence and show the interconnected nature of professional practice.
+
+**Writing Tip:**
+Ensure your case study clearly demonstrates Level 3 competencies through examples of reasoned professional advice, strategic decision-making, and complex problem-solving.
+"""
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error mapping issue to competencies: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error mapping issue to competencies: {str(e)}"
+            )]
+    
+    async def _handle_get_level_3_advice_framework(self) -> List[types.TextContent]:
+        """Handle getting Level 3 advice framework."""
+        try:
+            mapping = self._get_qs_competency_mapping()
+            framework = mapping.get("level_3_advice_framework", {})
+            
+            result = f"""
+**Level 3 Competency Demonstration Framework**
+
+**Decision-Making Process:**
+{chr(10).join(f"{step}" for step in framework.get('decision_making_process', []))}
+
+**Evidence Requirements:**
+{chr(10).join(f"• {req}" for req in framework.get('evidence_requirements', []))}
+
+**Quality Indicators:**
+{chr(10).join(f"• {indicator}" for indicator in framework.get('quality_indicators', []))}
+
+**Level 3 Writing Structure (STAR Method):**
+- **Situation:** Set the context and explain the complexity
+- **Task:** Define your specific role and responsibilities  
+- **Action:** Detail your analysis, options considered, and advice given
+- **Result:** Quantify outcomes and demonstrate impact
+
+**Key Level 3 Verbs to Use:**
+- Advised, recommended, proposed, evaluated, assessed
+- Led, directed, managed, coordinated, implemented
+- Innovated, developed, designed, created, established
+- Analyzed, investigated, researched, determined, concluded
+
+**Quantification Examples:**
+- Cost savings/increases (£ amounts or percentages)
+- Time savings/extensions (days, weeks, months)
+- Risk reduction/mitigation measures
+- Process improvements and efficiency gains
+- Stakeholder satisfaction metrics
+"""
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error getting Level 3 framework: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error getting Level 3 framework: {str(e)}"
+            )]
+    
+    # ENHANCED TOOL HANDLERS (keeping existing ones)
+    async def _handle_analyze_user_competency_gaps(self, pathway: str, target_competencies: List[str] = None) -> List[types.TextContent]:
+        """Handle analyzing user competency gaps."""
+        try:
+            # Read user data
+            user_file = self.user_data_dir / "APC Summary of Experience.json"
+            if not user_file.exists():
+                return [types.TextContent(
+                    type="text",
+                    text="Error: User data file not found for competency analysis."
+                )]
+            
+            data = await self._read_json_file_async(user_file)
+            user_text = self._extract_text_from_json_document(data)
+            
+            # Analyze competencies
+            analysis = self._analyze_user_experience_for_competencies(user_text)
+            
+            result = f"""
+**Competency Gap Analysis for {pathway.replace('_', ' ').title()} Pathway**
+
+**Suggested Competencies (Strong Evidence Found):**
+{chr(10).join(f"• {comp.replace('_', ' ').title()}" for comp in analysis['suggested_competencies'])}
+
+**Strength Indicators:**
+"""
+            for comp, details in analysis['strength_indicators'].items():
+                result += f"\n**{comp.replace('_', ' ').title()}:** {details['strength']} ({details['keyword_matches']} keyword matches)"
+            
+            result += f"""
+
+**Experience Gaps to Address:**
+{chr(10).join(f"• {comp.replace('_', ' ').title()}" for comp in analysis['experience_gaps'])}
+
+**Recommendations:**
+1. Focus case study on competencies with strong evidence
+2. Consider additional projects to address experience gaps
+3. Ensure Level 3 demonstration in chosen competencies
+"""
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error analyzing competency gaps: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error analyzing competency gaps: {str(e)}"
+            )]
+    
+    async def _handle_generate_competency_evidence(self, competency: str, level: int, project_context: str) -> List[types.TextContent]:
+        """Handle generating competency evidence."""
+        try:
+            templates = self._get_competency_templates()
+            
+            if competency not in templates:
+                available = ", ".join(templates.keys())
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: Unknown competency '{competency}'. Available: {available}"
+                )]
+            
+            level_key = f"level_{level}"
+            if level_key not in templates[competency]:
+                return [types.TextContent(
+                    type="text",
+                    text=f"Error: Level {level} not available for {competency}"
+                )]
+            
+            evidence_template = templates[competency][level_key]
+            
+            result = f"""
+**Evidence Statement for {competency.replace('_', ' ').title()} - Level {level}**
+
+**Project Context:** {project_context}
+
+**Level {level} Requirements:**
+{evidence_template}
+
+**Suggested Evidence Structure:**
+1. **Situation:** Describe the project challenge requiring {competency.replace('_', ' ')} expertise
+2. **Task:** Explain your specific role and responsibilities
+3. **Action:** Detail the {competency.replace('_', ' ')} activities you undertook
+4. **Result:** Quantify the outcomes and impact of your actions
+
+**Level {level} Demonstration Tips:**
+"""
+            
+            if level == 3:
+                result += """
+- Show strategic thinking and complex decision-making
+- Demonstrate provision of reasoned professional advice
+- Include examples of leadership and innovation
+- Quantify significant impacts and outcomes
+"""
+            elif level == 2:
+                result += """
+- Show practical application of knowledge
+- Demonstrate competent delivery of tasks
+- Include examples of problem-solving
+- Show progression from Level 1 understanding
+"""
+            else:
+                result += """
+- Show understanding of principles and concepts
+- Demonstrate awareness of relevant standards
+- Include examples of learning and development
+- Reference relevant CPD activities
+"""
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error generating competency evidence: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error generating competency evidence: {str(e)}"
+            )]
+    
+    async def _handle_validate_case_study_structure(self, case_study_text: str, pathway: str = "quantity_surveying") -> List[types.TextContent]:
+        """Handle validating case study structure."""
+        try:
+            validation = self._validate_case_study_content(case_study_text)
+            confidentiality_warnings = self._check_confidentiality_compliance(case_study_text)
+            
+            result = f"""
+**Case Study Validation Report**
+
+**Word Count Analysis:**
+- Current: {validation['word_count']['current']} words
+- Target: {validation['word_count']['target']} words
+- Status: {validation['word_count']['status']}
+- Usage: {validation['word_count']['percentage_used']}%
+
+**Structure Check:**
+"""
+            for section, present in validation['structure_check'].items():
+                status = "✓" if present else "✗"
+                result += f"\n{status} {section.title()}: {'Present' if present else 'Missing'}"
+            
+            result += f"""
+
+**Structure Score:** {validation['structure_score']:.1%}
+
+**Reflection Quality Assessment:**
+- Depth: {validation['reflection_quality']['depth_assessment']}
+- Indicators found: {validation['reflection_quality']['reflection_indicators_found']}
+
+**Overall Quality Score:** {validation['overall_score']}/1.0
+
+**Improvement Suggestions:**
+{chr(10).join(f"• {suggestion}" for suggestion in validation['improvement_suggestions'])}
+"""
+            
+            if confidentiality_warnings:
+                result += f"""
+
+**⚠️ Confidentiality Warnings:**
+{chr(10).join(f"• {warning}" for warning in confidentiality_warnings)}
+"""
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error validating case study: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error validating case study: {str(e)}"
+            )]
+    
+    async def _handle_enhance_reflection_content(self, basic_reflection: str, project_context: str) -> List[types.TextContent]:
+        """Handle enhancing reflection content."""
+        try:
+            enhanced = self._enhance_reflection_section(basic_reflection, project_context)
+            
+            return [types.TextContent(type="text", text=enhanced)]
+            
+        except Exception as e:
+            logger.error(f"Error enhancing reflection: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error enhancing reflection: {str(e)}"
+            )]
+    
+    async def _handle_generate_options_analysis(self, issue_description: str, industry: str) -> List[types.TextContent]:
+        """Handle generating options analysis."""
+        try:
+            analysis = self._generate_options_analysis(issue_description, industry)
+            
+            return [types.TextContent(type="text", text=analysis)]
+            
+        except Exception as e:
+            logger.error(f"Error generating options analysis: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error generating options analysis: {str(e)}"
+            )]
+    
+    async def _handle_check_confidentiality_compliance(self, content: str) -> List[types.TextContent]:
+        """Handle checking confidentiality compliance."""
+        try:
+            warnings = self._check_confidentiality_compliance(content)
+            
+            if not warnings:
+                result = "✅ No obvious confidentiality issues detected."
+            else:
+                result = f"⚠️ Potential confidentiality issues found:\n\n"
+                result += "\n".join(f"• {warning}" for warning in warnings)
+                result += "\n\n**Recommendations:**\n"
+                result += "• Review highlighted areas and consider anonymization\n"
+                result += "• Replace specific amounts with ranges (e.g., '£2.5M' → '£2-3M')\n"
+                result += "• Use generic descriptions (e.g., 'Contractor A', 'Major UK Bank')\n"
+                result += "• Remove personal names and contact details\n"
+                result += "• Ensure client approval for any specific information"
+            
+            return [types.TextContent(type="text", text=result)]
+            
+        except Exception as e:
+            logger.error(f"Error checking confidentiality: {str(e)}")
+            return [types.TextContent(
+                type="text",
+                text=f"Error checking confidentiality: {str(e)}"
+            )]
+    
     async def handle_call_tool(
         self, 
         name: str, 
@@ -660,13 +2069,59 @@ KEY REQUIREMENTS:
                 section_type = arguments.get("section_type", SectionType.ALL.value)
                 return await self._handle_extract_key_sections(section_type)
             
+            # NEW QS-SPECIFIC TOOL HANDLERS
+            elif name == "get_issue_template":
+                issue_type = arguments.get("issue_type", "")
+                return await self._handle_get_issue_template(issue_type)
+            
+            elif name == "get_competency_guidance":
+                competency = arguments.get("competency", "")
+                level = arguments.get("level", 3)
+                return await self._handle_get_competency_guidance(competency, level)
+            
+            elif name == "map_issue_to_competencies":
+                issue_type = arguments.get("issue_type", "")
+                return await self._handle_map_issue_to_competencies(issue_type)
+            
+            elif name == "get_level_3_advice_framework":
+                return await self._handle_get_level_3_advice_framework()
+            
+            # ENHANCED TOOL HANDLERS
+            elif name == "analyze_user_competency_gaps":
+                pathway = arguments.get("pathway", "quantity_surveying")
+                target_competencies = arguments.get("target_competencies", [])
+                return await self._handle_analyze_user_competency_gaps(pathway, target_competencies)
+            
+            elif name == "generate_competency_evidence":
+                competency = arguments.get("competency", "")
+                level = arguments.get("level", 3)
+                project_context = arguments.get("project_context", "")
+                return await self._handle_generate_competency_evidence(competency, level, project_context)
+            
+            elif name == "validate_case_study_structure":
+                case_study_text = arguments.get("case_study_text", "")
+                pathway = arguments.get("pathway", "quantity_surveying")
+                return await self._handle_validate_case_study_structure(case_study_text, pathway)
+            
+            elif name == "enhance_reflection_content":
+                basic_reflection = arguments.get("basic_reflection", "")
+                project_context = arguments.get("project_context", "")
+                return await self._handle_enhance_reflection_content(basic_reflection, project_context)
+            
+            elif name == "generate_options_analysis":
+                issue_description = arguments.get("issue_description", "")
+                industry = arguments.get("industry", "commercial")
+                return await self._handle_generate_options_analysis(issue_description, industry)
+            
+            elif name == "check_confidentiality_compliance":
+                content = arguments.get("content", "")
+                return await self._handle_check_confidentiality_compliance(content)
+            
             else:
                 logger.warning(f"Unknown tool requested: {name}")
                 return [types.TextContent(
                     type="text",
-                    text=f"Unknown tool: {name}. Available tools: read_user_data, read_example_submission, "
-                         f"read_submission_guide, list_available_resources, generate_case_study_outline, "
-                         f"extract_key_sections"
+                    text=f"Unknown tool: {name}. Use list_tools to see available tools."
                 )]
                 
         except Exception as e:
