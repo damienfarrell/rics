@@ -1,472 +1,382 @@
-# mcp_server.py - Refactored APC Case Study Generator MCP Server
-
 import os
-import logging
+import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
-import yaml
+from typing import Any, Dict, List
+from mcp.server.fastmcp import FastMCP
 
-from mcp.server import Server, NotificationOptions
-from mcp.server.models import InitializationOptions
-import mcp.server.stdio
-import mcp.types as types
+# Initialize FastMCP server
+mcp = FastMCP("RICS Case Study")
 
-from models import (
-    ResourceCategory, SectionType, IssueType, CompetencyLevel,
-    ValidationResult, ToolSchema
-)
-from tool_registry import ToolRegistry
-from apc_domain import APCDomainService
-from utils import (
-    error_response, success_response, 
-    read_json_file_async, extract_text_from_json_document,
-    get_available_files, is_valid_json_file, validate_path_security,
-    parse_resource_uri, format_bullet_list, render_template
-)
+# Constants
+RESOURCES_DIR = Path(r"C:\Users\Damien\projects\rics\mcp_resources")
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+def get_all_json_files() -> List[Path]:
+    """Recursively find all JSON files in the resources directory."""
+    json_files = []
+    if RESOURCES_DIR.exists():
+        for file_path in RESOURCES_DIR.rglob("*.json"):
+            json_files.append(file_path)
+    return json_files
 
-class APCCaseStudyServer:
-    """Simplified MCP Server for APC Case Study Generation."""
+def load_json_file(file_path: Path) -> Dict[str, Any] | None:
+    """Load and parse a JSON file."""
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        return {"error": f"Failed to load {file_path}: {str(e)}"}
+
+@mcp.resource("json://files/list")
+def list_json_files() -> str:
+    """List all available JSON files in the RICS resources directory."""
+    files = get_all_json_files()
+    file_list = []
+    for file_path in files:
+        relative_path = file_path.relative_to(RESOURCES_DIR)
+        file_list.append(str(relative_path))
     
-    def __init__(self, resource_dir: Path = Path("mcp_resources")):
-        # Load configuration
-        self.config = self._load_config()
-        
-        # Initialize server
-        self.server = Server(self.config['server']['name'])
-        
-        # Setup directories
-        self.resource_dir = resource_dir.resolve()
-        self.user_data_dir = self.resource_dir / self.config['directories']['user_data']
-        self.examples_dir = self.resource_dir / self.config['directories']['examples']
-        self.guides_dir = self.resource_dir / self.config['directories']['guides']
-        
-        # Initialize services
-        self.domain = APCDomainService()
-        self.tools = ToolRegistry()
-        
-        # Setup
-        self._ensure_directories_exist()
-        self._register_tools()
-        self._setup_handlers()
+    return "\n".join([
+        f"Available RICS Case Study JSON Files ({len(file_list)} total):",
+        "=" * 50,
+        "\n".join(file_list)
+    ])
+
+@mcp.tool()
+def read_json_file(path: str) -> str:
+    """Read a specific JSON file from the resources directory.
     
-    def _load_config(self) -> Dict[str, Any]:
-        """Load configuration from YAML file."""
-        config_path = Path("config.yaml")
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                return yaml.safe_load(f)
-        else:
-            # Default configuration
-            return {
-                "server": {"name": "apc-case-study-generator", "version": "1.0.0"},
-                "directories": {
-                    "user_data": "user_data",
-                    "examples": "apc_example_submissions",
-                    "guides": "apc_submission_guides"
-                }
-            }
+    Args:
+        path: Path to the JSON file relative to the resources directory
+    """
+    file_path = RESOURCES_DIR / path
+    # Security check - ensure the path doesn't escape our resources directory
+    try:
+        file_path = file_path.resolve()
+        if not str(file_path).startswith(str(RESOURCES_DIR.resolve())):
+            return json.dumps({"error": "Invalid path - access denied"}, indent=2)
+    except:
+        return json.dumps({"error": "Invalid path"}, indent=2)
     
-    def _ensure_directories_exist(self) -> None:
-        """Ensure all required directories exist."""
-        for directory in [self.resource_dir, self.user_data_dir, self.examples_dir, self.guides_dir]:
-            directory.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Ensured directory exists: {directory}")
+    if not file_path.exists():
+        return json.dumps({"error": f"File not found: {path}"}, indent=2)
     
-    def _setup_handlers(self) -> None:
-        """Setup server protocol handlers."""
-        self.server.list_resources()(self._handle_list_resources)
-        self.server.read_resource()(self._handle_read_resource)
-        self.server.list_tools()(lambda: self.tools.list_tools())
-        self.server.call_tool()(self.tools.execute)
+    if not file_path.suffix.lower() == '.json':
+        return json.dumps({"error": "Only JSON files are supported"}, indent=2)
     
-    def _register_tools(self) -> None:
-        """Register all tools with their handlers."""
-        # Basic file operations
-        self.tools.register(
-            name="read_user_data",
-            handler=self._read_user_data,
-            schema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            },
-            description="Read user's APC experience data"
-        )
-        
-        self.tools.register(
-            name="read_example_submission",
-            handler=self._read_example_submission,
-            schema={
-                "type": "object",
-                "properties": {
-                    "filename": {
-                        "type": "string",
-                        "description": "Name of the example file (without .json)"
-                    }
-                },
-                "required": ["filename"]
-            },
-            description="Read a specific example APC submission"
-        )
-        
-        self.tools.register(
-            name="list_available_resources",
-            handler=self._list_available_resources,
-            schema={
-                "type": "object",
-                "properties": {
-                    "resource_type": {
-                        "type": "string",
-                        "enum": ["examples", "guides", "all"],
-                        "description": "Type of resources to list"
-                    }
-                },
-                "required": ["resource_type"]
-            },
-            description="List all available examples and guides"
-        )
-        
-        # Case study generation
-        self.tools.register(
-            name="generate_case_study_outline",
-            handler=self._generate_case_study_outline,
-            schema={
-                "type": "object",
-                "properties": {
-                    "project_name": {
-                        "type": "string",
-                        "description": "Name of the project"
-                    }
-                },
-                "required": ["project_name"]
-            },
-            description="Generate a structured case study outline"
-        )
-        
-        # QS-specific tools
-        self.tools.register(
-            name="get_issue_template",
-            handler=self._get_issue_template,
-            schema={
-                "type": "object",
-                "properties": {
-                    "issue_type": {
-                        "type": "string",
-                        "enum": [e.value for e in IssueType],
-                        "description": "Type of QS issue/challenge"
-                    }
-                },
-                "required": ["issue_type"]
-            },
-            description="Get detailed template for specific QS issue type"
-        )
-        
-        self.tools.register(
-            name="get_competency_guidance",
-            handler=self._get_competency_guidance,
-            schema={
-                "type": "object",
-                "properties": {
-                    "competency": {
-                        "type": "string",
-                        "description": "RICS competency name"
-                    },
-                    "level": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 3,
-                        "description": "Required competency level"
-                    }
-                },
-                "required": ["competency", "level"]
-            },
-            description="Get guidance for demonstrating specific competency"
-        )
-        
-        # Validation tools
-        self.tools.register(
-            name="validate_case_study",
-            handler=self._validate_case_study,
-            schema={
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "Case study content to validate"
-                    }
-                },
-                "required": ["content"]
-            },
-            description="Validate case study against RICS requirements"
-        )
-        
-        self.tools.register(
-            name="check_confidentiality",
-            handler=self._check_confidentiality,
-            schema={
-                "type": "object",
-                "properties": {
-                    "content": {
-                        "type": "string",
-                        "description": "Content to check"
-                    }
-                },
-                "required": ["content"]
-            },
-            description="Check for potential confidentiality breaches"
-        )
-        
-        # Analysis tools
-        self.tools.register(
-            name="analyze_user_competencies",
-            handler=self._analyze_user_competencies,
-            schema={
-                "type": "object",
-                "properties": {},
-                "required": []
-            },
-            description="Analyze user's experience for competency evidence"
-        )
-        
-        self.tools.register(
-            name="generate_options_analysis",
-            handler=self._generate_options_analysis,
-            schema={
-                "type": "object",
-                "properties": {
-                    "issue_description": {
-                        "type": "string",
-                        "description": "Description of the issue"
-                    },
-                    "industry": {
-                        "type": "string",
-                        "enum": ["rail", "commercial", "infrastructure"],
-                        "description": "Industry context"
-                    }
-                },
-                "required": ["issue_description", "industry"]
-            },
-            description="Generate options analysis for project issues"
-        )
+    data = load_json_file(file_path)
+    return json.dumps(data, indent=2)
+
+@mcp.tool()
+def search_json_content(keyword: str, case_sensitive: bool = False) -> str:
+    """Search for a keyword across all JSON files in the RICS resources.
     
-    # Generic file reading handler
-    async def _read_resource_file(self, resource_type: str, filename: Optional[str] = None) -> str:
-        """Generic handler for reading resource files."""
-        directories = {
-            "user_data": (self.user_data_dir, "APC Summary of Experience.json"),
-            "example": (self.examples_dir, f"{filename}.json" if filename else ""),
-            "guide": (self.guides_dir, f"{filename}.json" if filename else "")
-        }
-        
-        if resource_type not in directories:
-            return f"Unknown resource type: {resource_type}"
-        
-        directory, file_pattern = directories[resource_type]
-        file_path = directory / file_pattern if file_pattern else None
-        
-        if not file_path or not file_path.exists():
-            available = await get_available_files(directory)
-            return f"File not found. Available files: {', '.join(available)}"
-        
+    Args:
+        keyword: The keyword to search for
+        case_sensitive: Whether the search should be case-sensitive (default: False)
+    """
+    results = []
+    files = get_all_json_files()
+    
+    search_term = keyword if case_sensitive else keyword.lower()
+    
+    for file_path in files:
         try:
-            data = await read_json_file_async(file_path)
-            content = extract_text_from_json_document(data)
-            return f"{resource_type.title()}: {content}"
-        except Exception as e:
-            return f"Error reading {resource_type}: {str(e)}"
-    
-    # Tool handlers (simplified)
-    async def _read_user_data(self) -> str:
-        """Read user's APC experience data."""
-        return await self._read_resource_file("user_data")
-    
-    async def _read_example_submission(self, filename: str) -> str:
-        """Read a specific example submission."""
-        return await self._read_resource_file("example", filename)
-    
-    async def _list_available_resources(self, resource_type: str) -> str:
-        """List available resources."""
-        result = []
-        
-        if resource_type in ["examples", "all"]:
-            examples = await get_available_files(self.examples_dir)
-            if examples:
-                result.append(f"Example Submissions:\n{format_bullet_list(examples)}")
-        
-        if resource_type in ["guides", "all"]:
-            guides = await get_available_files(self.guides_dir)
-            if guides:
-                result.append(f"Submission Guides:\n{format_bullet_list(guides)}")
-        
-        return "\n\n".join(result) if result else f"No resources found for type: {resource_type}"
-    
-    async def _generate_case_study_outline(self, project_name: str) -> str:
-        """Generate case study outline."""
-        template = self.domain.templates.get("case_study_outline", "")
-        return render_template(template, {"project_name": project_name})
-    
-    async def _get_issue_template(self, issue_type: str) -> str:
-        """Get issue template."""
-        template = self.domain.get_issue_template(issue_type)
-        if not template:
-            return f"Unknown issue type: {issue_type}"
-        
-        return f"""**QS Issue Template: {template.title}**
-
-**Description:** {template.description}
-
-**Typical Scenarios:**
-{format_bullet_list(template.typical_scenarios)}
-
-**Options Framework:**
-{format_bullet_list(template.options_framework)}
-
-**Competencies Demonstrated:**
-{format_bullet_list(template.competencies_demonstrated)}"""
-    
-    async def _get_competency_guidance(self, competency: str, level: int) -> str:
-        """Get competency guidance."""
-        # Get from domain service
-        mappings = self.domain.competency_mappings.get("core_competencies", {})
-        if competency not in mappings:
-            return f"Unknown competency: {competency}"
-        
-        return f"**{competency.replace('_', ' ').title()} - Level {level} Guidance**\n\n[Guidance content here]"
-    
-    async def _validate_case_study(self, content: str) -> str:
-        """Validate case study content."""
-        result = self.domain.validate_case_study(content)
-        
-        return f"""**Case Study Validation Report**
-
-**Word Count:** {result.word_count}/{result.target_word_count} ({result.percentage_used}%)
-**Structure Score:** {result.structure_score:.1%}
-**Reflection Quality:** {result.reflection_quality}
-**Overall Score:** {result.overall_score}/1.0
-
-**Suggestions:**
-{format_bullet_list(result.suggestions)}"""
-    
-    async def _check_confidentiality(self, content: str) -> str:
-        """Check confidentiality compliance."""
-        warnings = self.domain.check_confidentiality(content)
-        
-        if not warnings:
-            return "✅ No confidentiality issues detected."
-        
-        return f"⚠️ Potential issues:\n{format_bullet_list(warnings)}"
-    
-    async def _analyze_user_competencies(self) -> str:
-        """Analyze user competencies."""
-        # Read user data first
-        user_data = await self._read_user_data()
-        if user_data.startswith("Error"):
-            return user_data
-        
-        analysis = self.domain.analyze_user_competencies(user_data)
-        
-        return f"""**Competency Analysis**
-
-**Suggested Competencies:**
-{format_bullet_list(analysis.suggested_competencies)}
-
-**Experience Gaps:**
-{format_bullet_list(analysis.experience_gaps)}"""
-    
-    async def _generate_options_analysis(self, issue_description: str, industry: str) -> str:
-        """Generate options analysis."""
-        analysis = self.domain.generate_options_analysis(issue_description, industry)
-        
-        result = f"**Options Analysis for: {issue_description}**\n\n"
-        
-        for i, option in enumerate(analysis.options, 1):
-            result += f"**Option {i}: {option['title']}**\n"
-            result += f"- Cost Impact: {option['cost_impact']}\n"
-            result += f"- Programme Impact: {option['programme_impact']}\n"
-            result += f"- Risk Level: {option['risk_level']}\n"
-            result += f"- Benefits: {option['benefits']}\n\n"
-        
-        return result
-    
-    # Resource handlers
-    async def _handle_list_resources(self) -> List[types.Resource]:
-        """List all resources."""
-        resources = []
-        
-        if not self.resource_dir.exists():
-            return resources
-        
-        for root, _, files in os.walk(self.resource_dir):
-            root_path = Path(root)
-            for file in files:
-                if not file.endswith(".json"):
-                    continue
+            content = json.dumps(load_json_file(file_path))
+            search_content = content if case_sensitive else content.lower()
+            
+            if search_term in search_content:
+                relative_path = file_path.relative_to(RESOURCES_DIR)
+                # Find the lines containing the keyword
+                lines = content.split('\n')
+                matching_lines = []
+                for i, line in enumerate(lines):
+                    line_to_search = line if case_sensitive else line.lower()
+                    if search_term in line_to_search:
+                        matching_lines.append(f"  Line {i+1}: {line.strip()}")
                 
-                file_path = root_path / file
-                if not is_valid_json_file(file_path):
-                    continue
-                
-                try:
-                    relative_path = file_path.relative_to(self.resource_dir)
-                    resources.append(types.Resource(
-                        uri=f"file:///{relative_path.as_posix()}",
-                        name=file_path.stem,
-                        description=str(relative_path),
-                        mimeType="application/json"
-                    ))
-                except ValueError:
-                    continue
-        
-        return resources
-    
-    async def _handle_read_resource(self, uri: str) -> str:
-        """Read a resource by URI."""
-        try:
-            path_str = parse_resource_uri(uri)
-            file_path = self.resource_dir / path_str
-            
-            validate_path_security(file_path, self.resource_dir)
-            
-            if not file_path.exists():
-                raise FileNotFoundError(f"File not found: {file_path}")
-            
-            data = await read_json_file_async(file_path)
-            return extract_text_from_json_document(data)
-            
+                results.append({
+                    "file": str(relative_path),
+                    "matches": len(matching_lines),
+                    "preview": matching_lines[:3]  # Show first 3 matching lines
+                })
         except Exception as e:
-            logger.error(f"Error reading resource {uri}: {str(e)}")
-            raise
+            continue
     
-    async def run(self):
-        """Run the MCP server."""
-        async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
-            await self.server.run(
-                read_stream,
-                write_stream,
-                InitializationOptions(
-                    server_name=self.config['server']['name'],
-                    server_version=self.config['server']['version'],
-                    capabilities=self.server.get_capabilities(
-                        notification_options=NotificationOptions(),
-                        experimental_capabilities={},
-                    ),
-                ),
-            )
+    if not results:
+        return f"No matches found for '{keyword}'"
+    
+    output = [f"Search results for '{keyword}' ({'case-sensitive' if case_sensitive else 'case-insensitive'}):"]
+    output.append("=" * 50)
+    
+    for result in results:
+        output.append(f"\nFile: {result['file']}")
+        output.append(f"Matches: {result['matches']}")
+        output.append("Preview:")
+        output.extend(result['preview'])
+        if result['matches'] > 3:
+            output.append(f"  ... and {result['matches'] - 3} more matches")
+    
+    return "\n".join(output)
 
-async def main():
-    """Main entry point."""
-    resource_dir = Path("mcp_resources")
-    server = APCCaseStudyServer(resource_dir)
+@mcp.tool()
+def get_json_structure(path: str, max_depth: int = 3) -> str:
+    """Get the structure of a JSON file without showing all the data.
     
-    logger.info(f"Starting APC Case Study Generator Server")
-    logger.info(f"Resource directory: {resource_dir.resolve()}")
+    Args:
+        path: Path to the JSON file relative to the resources directory
+        max_depth: Maximum depth to explore (default: 3)
+    """
+    file_path = RESOURCES_DIR / path
     
-    await server.run()
+    # Security check
+    try:
+        file_path = file_path.resolve()
+        if not str(file_path).startswith(str(RESOURCES_DIR.resolve())):
+            return "Error: Invalid path - access denied"
+    except:
+        return "Error: Invalid path"
+    
+    if not file_path.exists():
+        return f"Error: File not found: {path}"
+    
+    data = load_json_file(file_path)
+    if data is None:
+        return "Error: Failed to load JSON file"
+    
+    def explore_structure(obj: Any, depth: int = 0, prefix: str = "") -> List[str]:
+        lines = []
+        if depth > max_depth:
+            lines.append(f"{prefix}...")
+            return lines
+        
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if isinstance(value, (dict, list)):
+                    lines.append(f"{prefix}{key}: {type(value).__name__}")
+                    lines.extend(explore_structure(value, depth + 1, prefix + "  "))
+                else:
+                    lines.append(f"{prefix}{key}: {type(value).__name__}")
+        elif isinstance(obj, list):
+            if obj:
+                lines.append(f"{prefix}[0]: {type(obj[0]).__name__}")
+                if isinstance(obj[0], (dict, list)):
+                    lines.extend(explore_structure(obj[0], depth + 1, prefix + "  "))
+            lines.append(f"{prefix}... ({len(obj)} items total)")
+        
+        return lines
+    
+    output = [f"Structure of {path}:", "=" * 50]
+    output.extend(explore_structure(data))
+    return "\n".join(output)
+
+@mcp.prompt()
+def case_study_drafting() -> str:
+    """Draft a RICS Case Study"""
+    return """
+    
+Create a RICS APC Quantity Surveying case study that will pass assessment by following these steps:
+
+STEP 1 - UNDERSTAND FILE STRUCTURE:
+- Read `/mcp_index.json` and `/folder_map.json` to understand the data structure
+- Use `get_json_structure` to preview file contents before reading
+- Note the types of documents available (guidance notes, examples, user data)
+
+STEP 2 - ANALYZE CANDIDATE PROFILE:
+- Read ALL json files in `/user_data/` to understand the candidate's experience
+- Use `search_json_content` to find mentions of the candidate's name across all files
+- Extract: project names, values, roles, competencies demonstrated, achievements
+
+STEP 3 - LEARN FROM SUCCESSFUL EXAMPLES:
+- Read case studies from `/apc_example_submissions/`
+- Extract successful patterns:
+  * How complex issues are introduced
+  * How personal leadership is demonstrated  
+  * How achievements are quantified
+  * How competencies are linked
+  * Common phrases for Level 3 demonstration
+  * Typical financial impact ranges (£1m-£10m+)
+  * Structure of option analysis
+
+STEP 4 - UNDERSTAND REQUIREMENTS:
+- Read `/apc_submission_guides/Case Study Essentials.json` for structure requirements
+- Read `/apc_submission_guides/APC-Candidate-guide_final_February-2024.json` for assessment criteria
+- Document: word limits, required sections, competency requirements
+
+STEP 5 - SEARCH FOR RELEVANT GUIDANCE:
+Before selecting issues:
+- Use `search_json_content("commercial management")` for baseline understanding
+- Search for potential issue types: "variation", "acceleration", "dispute", "risk", "value engineering"
+- Map search results to specific guidance notes
+
+STEP 6 - SELECT TWO ISSUES:
+ISSUE SELECTION FRAMEWORK - Score each potential issue (1-5):
+- Financial Impact: £1-2m (3), £2-5m (4), £5m+ (5)
+- Decision Authority: Assisted (1), Led (3), Sole decision-maker (5)  
+- Complexity: 3 options (3), 4-5 options (4), 6+ options (5)
+- Innovation: Standard approach (1), Modified approach (3), Novel solution (5)
+- Measurability: Estimated outcome (3), Partial metrics (4), Full quantification (5)
+
+Select issues scoring 15+ total points that:
+✓ Demonstrate DIFFERENT core competencies
+✓ Show progression from analysis to implementation
+✓ Have clear, quantifiable outcomes
+✓ Required YOUR judgment (not following procedures)
+
+STEP 7 - READ TARGETED GUIDANCE:
+For each selected issue:
+- First read `/guidance_notes/Commercial-management-of-construction_1st-edition.json`
+- Use `search_json_content` with issue-specific terms
+- Read the 2-3 most relevant guidance notes
+- Document which guidance informed your technical approach
+
+Common guidance note mappings:
+- Variations: Valuing-change_1st-edition_120325.json
+- Delays/Acceleration: Extensions-of-time.json, Acceleration_2nd-ed_2024.json
+- Disputes: Conflict-avoidance-and-dispute-resolution-in-construction_1st-edition.json
+- Final Accounts: final_account_procedures_1st_edition_rics.json
+- Risk: Management-of-risk_1st-edition_120325.json
+- Loss/Expense: Ascertaining-loss-and-expense_2nd_July-2024.json
+
+STEP 8 - WRITE CASE STUDY:
+
+INTRODUCTION (600 words):
+Project: [Name from user data, £Xm value, duration, location, procurement route]
+Role: "As [exact title], I was responsible for..." [5-7 specific duties]
+Team: "I managed a team of..." / "I reported to..."
+Selection: "I selected this project because it presented complex challenges including..."
+[List 3-4 complexity factors that link to your issues]
+
+MY APPROACH (1,500 words - 750 per issue):
+
+Issue 1: [Descriptive title]
+CHALLENGE:
+"The project faced [specific situation] which threatened to [impact] resulting in potential [£X cost/Y week delay]."
+
+ANALYSIS:
+"Drawing on RICS guidance on [topic - cite specific guidance note], I evaluated the following options:"
+
+Option 1: [Traditional approach]
+- Advantages: [2-3 points with cost/time implications]  
+- Disadvantages: [2-3 points with risks]
+- Financial Impact: £X cost/saving
+- Programme Impact: Y weeks delay/acceleration
+
+Option 2: [Alternative approach]
+- Advantages: [2-3 points]
+- Disadvantages: [2-3 points]  
+- Financial Impact: £X
+- Programme Impact: Y weeks
+
+Option 3: [Innovative approach]
+- Advantages: [2-3 points]
+- Disadvantages: [2-3 points]
+- Financial Impact: £X  
+- Programme Impact: Y weeks
+
+DECISION:
+"After consulting with [stakeholders], I recommended Option [X] because..."
+"I presented this to the client emphasizing..."
+
+IMPLEMENTATION:
+"I led the implementation by..."
+"Key challenges during execution included..."
+
+OUTCOME:
+"This resulted in:"
+- Financial: "Saved £X / Recovered £Y / Avoided £Z exposure"
+- Programme: "Accelerated completion by X weeks"
+- Relationship: "Client commended the approach, stating..."
+
+Issue 2: [Follow same structure]
+
+MY ACHIEVEMENTS (600 words):
+
+COMPETENCY EVIDENCE MAP:
+Primary Competency - [e.g., Commercial Management Level 3]:
+"I demonstrated strategic cost management by [specific example with quantified outcome]"
+
+Secondary Competency - [e.g., Contract Practice Level 3]:  
+"I showed advanced contractual expertise through [specific example]"
+
+Supporting Competency - [e.g., Client Care Level 2]:
+"I maintained stakeholder relationships by [specific example]"
+
+KEY ACHIEVEMENTS:
+Financial:
+- "Saved £X through [specific action]"
+- "Recovered £Y by [specific action]"
+- "Mitigated £Z risk exposure"
+
+Programme:
+- "Accelerated programme by X weeks"
+- "Avoided Y weeks delay"
+
+Recognition:
+- "Client feedback: '[specific quote]'"
+- "Project won [award/commendation]"
+- "Approach adopted as best practice"
+
+CONCLUSION (300 words):
+
+SUCCESS FACTORS:
+"My approach succeeded due to:
+1. [Factor] - which enabled [outcome]
+2. [Factor] - which resulted in [outcome]
+3. [Factor] - which achieved [outcome]"
+
+LESSONS LEARNED:
+"Key insights from this experience:
+1. [Learning point] - I now apply this by...
+2. [Learning point] - This has improved my...
+3. [Learning point] - I share this with my team through..."
+
+PROFESSIONAL DEVELOPMENT:
+"This project advanced my competencies by..."
+"I continue to apply these learnings in my current role by..."
+
+STEP 9 - VALIDATE CASE STUDY:
+✓ Word count: Introduction (600), Approach (1500), Achievements (600), Conclusion (300)
+✓ Two distinct issues demonstrating different competencies
+✓ Minimum £1m impact per issue clearly stated
+✓ 3+ options analyzed with advantages/disadvantages
+✓ Personal pronouns used ("I" not "we")  
+✓ Quantified outcomes for each issue
+✓ Technical accuracy aligned with RICS guidance
+✓ Clear competency evidence at Level 3
+✓ Specific examples not generic statements
+
+KEY PHRASES TO INCLUDE:
+- "I identified that..."
+- "My analysis concluded..."
+- "I recommended to the client..."
+- "I took responsibility for..."
+- "This achieved a saving of £..."
+- "I mitigated the risk by..."
+- "The client acknowledged that..."
+
+IF INSUFFICIENT PROJECT COMPLEXITY:
+- Aggregate related smaller issues into strategic themes
+- Emphasize innovative approaches to routine challenges
+- Highlight risk mitigation preventing larger issues
+- Show process improvements with cumulative impact
+- Demonstrate how standard procedures were enhanced
+
+THROUGHOUT:
+✓ Use active voice and "I" statements
+✓ Be specific with numbers, dates, and outcomes
+✓ Reference RICS guidance for technical credibility
+✓ Show progression from problem to solution
+✓ Demonstrate judgment not just process following
+✓ Link every achievement to competency evidence
+
+COMPETENCY EVIDENCE
+Ensure you demonstrate these at Level 3:
+ Commercial Management - strategic cost advice
+ Contract Practice - complex contractual issues
+ Financial Control - reporting and forecasting
+
+"""
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    # Run the server
+    mcp.run(transport='stdio')

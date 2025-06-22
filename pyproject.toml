@@ -1,13 +1,21 @@
 [project]
 name = "rics"
 version = "0.1.0"
-description = "Add your description here"
+description = "RICS APC Case Study Generator MCP Server"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "aiofiles>=24.1.0",
     "mcp[cli]>=1.9.4",
     "pymupdf>=1.26.1",
     "pyyaml>=6.0.2",
     "typing>=3.10.0.0",
 ]
+
+[project.scripts]
+mcp-server-rics = "mcp_server:main"
+
+[tool.mcp]
+name = "apc-case-study-generator"
+description = "MCP server for generating RICS APC case studies"
+command = ["python", "mcp_server.py"]
+env = {}
